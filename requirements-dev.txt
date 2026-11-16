@@ -1,0 +1,6 @@
+# Needed only to run the tests (the add-on itself has no dependencies).
+pytest
+Pillow
+XlsxWriter
+python-docx
+python-pptx

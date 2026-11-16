@@ -1,0 +1,71 @@
+name: Release NVDA Add-on
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  build_and_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y gettext
+          pip install scons markdown -r requirements-dev.txt
+
+      # The Add-on Store reads the version from the manifest, which comes from buildVars.py.
+      - name: Check that the tag matches the add-on version
+        run: python scripts/check_version.py "${GITHUB_REF_NAME#v}"
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      # Uses the changelog.md section of the tag, so the Store's "what's new" cannot be stale.
+      - name: Sync changelog into buildVars.py
+        run: python scripts/sync_changelog.py
+
+      - name: Append Changelog to Readme
+        run: |
+          echo "" >> readme.md
+          echo "## Changelog" >> readme.md
+          cat changelog.md >> readme.md
+
+      - name: Build Add-on and Pot file
+        run: scons && scons pot
+
+      - name: Extract release notes
+        run: python scripts/extract_release_notes.py "${GITHUB_REF_NAME#v}" release_notes.md
+
+      # The Add-on Store submission asks for the SHA-256 of the download.
+      - name: Checksums
+        run: |
+          sha256sum *.nvda-addon | tee checksums.txt
+          {
+            echo ""
+            echo "SHA-256:"
+            echo ""
+            echo '```'
+            cat checksums.txt
+            echo '```'
+          } >> release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          files: |
+            *.nvda-addon
+            *.pot
+          draft: false
+          prerelease: false
